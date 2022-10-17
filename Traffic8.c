@@ -91,7 +91,7 @@ const char menu[] =
    "| Debut    | D hh:mm:ss  | mise a jour debut controle feux     |\n"
    "| Fin      | F hh:mm:ss  | mise a jour fin controle feux       |\n"
 	 "|          |             |                                     |\n"
-	 "| M			   |             | test des feux en mode manuel        |\n"
+	 "| M	       |             | test des feux en mode manuel        |\n"
    "+----------+-------------+-------------------------------------+\n";
 const char mode_manuel[] = 
 	   
@@ -131,6 +131,9 @@ volatile bool DPV1;
 volatile bool DPV2;
 volatile bool detect1;
 volatile bool	detect2;
+volatile bool train1 = 0;
+volatile bool train2 = 0;
+volatile bool train = 0;
 char ph;
 char task;
 bool escape;
@@ -287,6 +290,9 @@ void lecture_BP  (void *pvParameters) {
 																												// memorisation appui BP1 	
 		if ( HAL_GPIO_ReadPin( GPIOB, DPV2_Pin ) )	DPV2 = 1;
 						 					                           // Scrutation des touches toutes les 50ms
+		train1 = HAL_GPIO_ReadPin( GPIOC, train1_Pin );
+		train2 = HAL_GPIO_ReadPin( GPIOC, train2_Pin );
+		train = train1 || train2;
 		vTaskDelayUntil( &xLastWakeTime, 50/ portTICK_PERIOD_MS);
 
   }
@@ -318,7 +324,9 @@ static char cpt;
 		{
 				 HAL_GPIO_WritePin(GPIOB,V1_Pin|S2_Pin|R2_Pin, 1);
 				 HAL_GPIO_WritePin(GPIOB,R1_Pin|O1_Pin|V2_Pin|O2_Pin|S1_Pin, 0);
-				if (( ++cpt > 8 ) || DPV1 || ( detect2&&!detect1&&!DPV2 ) || flag_manuel) ph = 3;					
+				if (( ++cpt > 8 ) || DPV1 || ( detect2&&!detect1&&!DPV2 ) || flag_manuel || train) ph = 3;
+				//S'il y a un train, on va au feu rouge pour les voitures passant par le train
+				//Si l'on est en mode manuelle, on ne fait plus attention au timer et on change de phase seulement quand on appuie sur n
 		}
 		break;
 
@@ -337,14 +345,23 @@ static char cpt;
 				cpt = 0;
 				ph = 5;	
 				DPV1 = DPV2 = detect1 = detect2 = 0;
+			  if (train) HAL_GPIO_WritePin (GPIOB, S1_Pin, 1);
 		}
 		break;
 
 		case 5:
 		{
 				HAL_GPIO_WritePin (GPIOB, R1_Pin|V2_Pin|S1_Pin, 1);
-				HAL_GPIO_WritePin(GPIOB, V1_Pin|O1_Pin|S2_Pin|R2_Pin|O2_Pin, 0);	
-				if (( ++cpt > 8 ) || DPV2 || ( detect1&&!detect2&&!DPV1 ) || flag_manuel) ph = 6;		
+				HAL_GPIO_WritePin(GPIOB, V1_Pin|O1_Pin|S2_Pin|R2_Pin|O2_Pin, 0);
+				if (!train)
+				{	
+					if (( ++cpt > 8 ) || DPV2 || ( detect1&&!detect2&&!DPV1 ) || flag_manuel) ph = 6;
+					//Si l'on est en mode manuelle, on ne fait plus attention au timer et on change de phase seulement quand on appuie sur n
+				}
+				else
+				{
+					if (DPV2) ph = 6;
+				}
 		}
 		break;
 
@@ -352,7 +369,23 @@ static char cpt;
 		{
 				HAL_GPIO_WritePin (GPIOB, R1_Pin|O2_Pin, 1);
 				HAL_GPIO_WritePin (GPIOB, V1_Pin|O1_Pin|S1_Pin|R2_Pin|V2_Pin|S2_Pin, 0);
-				ph = 1;		
+				if (train)
+				{					
+					ph = 7;
+					HAL_GPIO_WritePin (GPIOB, S1_Pin, 1);
+				}
+				else ph = 1;
+		}
+		break;
+		
+		case 7:
+		{
+				HAL_GPIO_WritePin (GPIOB, R1_Pin|R2_Pin|S1_Pin|S2_Pin, 1);
+				HAL_GPIO_WritePin (GPIOB, V1_Pin|O1_Pin|O2_Pin|V2_Pin, 0);
+				if (( ++cpt > 8 ) || (detect2&&!DPV2) || flag_manuel) ph = 4;
+				//Les piétons ont 8 sec pour passer
+				//S'il y a des voitures mais pas de piétons on remet le feu des voitures au vert
+				//Si on est en manuel on passe d'une phase à l'autre manuellement
 		}
 		break;
 		}
