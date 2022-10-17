@@ -69,6 +69,8 @@
 #define ESC				0x1B							/* Caractère Escape */
 #define M_MAJ			0x4d							/* Caractère M*/
 #define M_MIN			0x6d							/* Caractère m*/
+#define N_MAJ			0x4e							/* Caractère N*/
+#define N_MIN			0x6e							/* Caractère n*/
 #define CTRL_Q     0x11                             // Control+Q character code
 #define CTRL_S     0x13                             // Control+S character code
 #define DEL        0x7F
@@ -88,6 +90,16 @@ const char menu[] =
    "| Horloge  | H hh:mm:ss  | mise a jour horloge                 |\n"
    "| Debut    | D hh:mm:ss  | mise a jour debut controle feux     |\n"
    "| Fin      | F hh:mm:ss  | mise a jour fin controle feux       |\n"
+	 "|          |             |                                     |\n"
+	 "| M			   |             | test des feux en mode manuel        |\n"
+   "+----------+-------------+-------------------------------------+\n";
+const char mode_manuel[] = 
+	   
+	 "\n"
+   "+**************             MODE MANUEL                ********+\n"
+   "|                                                              |\n"
+   "+ command -+ syntax -----+ function ---------------------------+\n"
+   "| N        |             | prochaine phase                     |\n"
    "+----------+-------------+-------------------------------------+\n";
 
 
@@ -123,6 +135,7 @@ char ph;
 char task;
 bool escape;
 bool capteur;
+bool flag_manuel = false;
  unsigned char c;
 /* USER CODE END Includes */
 /* USER CODE END PV */
@@ -144,7 +157,7 @@ bool lect_H (char  * )	;
 
 /* USER CODE BEGIN 0 */
 QueueHandle_t xRxQueue;
-QueueHandle_t xTxQueue;
+QueueHandle_t xTxQueue; //Permet de communiquer le temps entre la fonction génération temps et la fonction commande, la queue est de taille 1 fois le message de temps complet la donnée temps donc on ne doit pas gérer la queue même si on ne lit pas la donnée
 /* USER CODE END 0 */
 
 int main(void)
@@ -305,7 +318,7 @@ static char cpt;
 		{
 				 HAL_GPIO_WritePin(GPIOB,V1_Pin|S2_Pin|R2_Pin, 1);
 				 HAL_GPIO_WritePin(GPIOB,R1_Pin|O1_Pin|V2_Pin|O2_Pin|S1_Pin, 0);
-				if (( ++cpt > 8 ) || DPV1 || ( detect2&&!detect1&&!DPV2 )  ) ph = 3;					
+				if (( ++cpt > 8 ) || DPV1 || ( detect2&&!detect1&&!DPV2 ) || flag_manuel) ph = 3;					
 		}
 		break;
 
@@ -331,7 +344,7 @@ static char cpt;
 		{
 				HAL_GPIO_WritePin (GPIOB, R1_Pin|V2_Pin|S1_Pin, 1);
 				HAL_GPIO_WritePin(GPIOB, V1_Pin|O1_Pin|S2_Pin|R2_Pin|O2_Pin, 0);	
-				if (( ++cpt > 8 ) || DPV2 || ( detect1&&!detect2&&!DPV1 )) ph = 6;		
+				if (( ++cpt > 8 ) || DPV2 || ( detect1&&!detect2&&!DPV1 ) || flag_manuel) ph = 6;		
 		}
 		break;
 
@@ -357,8 +370,11 @@ static char cpt;
 /*               	FONCTION 	GENERATION TEMPS							*/
 /****************************************************************************/
 bool generation_temps ( void) { 
-
+/* Fonction générant le temps
+*/
 bool valid_seq;
+	
+	// Indentation du temps
     					                /* clock is an endless loop           */
     if (++horloge.sec == 60)  {         /* calculate the second               */
       horloge.sec = 0;
@@ -429,6 +445,7 @@ bool lect_H (char  *buffer)  {
 /*       				TACHE	CONTROLEUR									*/
 /****************************************************************************/
 void controleur  (void *pvParameters) {
+	//Permet de lancer le sequencer et la génération du temps
   
 	TickType_t xLastWakeTime;
 	
@@ -438,7 +455,10 @@ void controleur  (void *pvParameters) {
   xLastWakeTime = xTaskGetTickCount();
 
  	while (1) {
-		sequenceur(generation_temps());
+		if (!flag_manuel)
+			sequenceur(generation_temps());
+		else
+			generation_temps();
 		vTaskDelayUntil( &xLastWakeTime, 1000/ portTICK_PERIOD_MS);
  	}
 }
@@ -512,11 +532,25 @@ void command  (void *pvParameters) {
 						break;
 				}   
 			}
+
 			if( c == M_MAJ  || c == M_MIN)
 			{
 				/*On arrête l'incrémentation automatique des états dans le controlleur, on fait cela à l'aide d'un flag.
 				Si notre flag est activé, on rentre en mode manuel, et on ne rentre plus 
 				*/
+				printf(mode_manuel);
+				flag_manuel = true;
+				do {
+					// On lit au moins une fois la commande qui sera envoyée sur l'UART
+					xQueueReceive( xRxQueue, &c, portMAX_DELAY );
+					if (c == N_MAJ || c == N_MIN)
+					{
+						sequenceur(true);
+						c = 0x00;
+					}
+				} while ( c != M_MAJ  && c != M_MIN);
+				flag_manuel = false;
+				
 			}
 		}
 	}
