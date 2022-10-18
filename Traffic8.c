@@ -59,6 +59,8 @@
 #include <string.h>                   /* string and memory functions         */
 #include <stdlib.h>
 #include <stdbool.h>
+#include "tim.h"
+#include "stm32f1xx_hal_tim.h"
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -139,7 +141,7 @@ char task;
 bool escape;
 bool capteur;
 bool flag_manuel = false;
- unsigned char c;
+unsigned char c;
 /* USER CODE END Includes */
 /* USER CODE END PV */
 
@@ -152,6 +154,7 @@ void SystemClock_Config(void);
 void controleur( void *pvParameters );
 void command  (void *pvParameters);
 void lecture_BP (void *pvParameters);
+void barriere (void *pvParameters);
 
 void sequenceur (bool);
 bool generation_temps ( void) ;
@@ -194,7 +197,10 @@ int main(void)
 	
 
   /* USER CODE BEGIN 2 */
- xTaskCreate(      controleur,       /* Function that implements the task. */
+	MX_TIM2_Init();
+	MX_TIM3_Init();
+	
+  xTaskCreate(      controleur,       /* Function that implements the task. */
                     "CONTROLEUR",          /* Text name for the task. */
                     128,      /* Stack size in words, not bytes. */
                     NULL,    /* Parameter passed into the task. */
@@ -213,7 +219,16 @@ int main(void)
                     128,      /* Stack size in words, not bytes. */
                     NULL,    /* Parameter passed into the task. */
                     tskIDLE_PRIORITY+3,/* Priority at which the task is created. */
-                    NULL );      /* Used to pass out the created task's handle. */				
+                    NULL );      /* Used to pass out the created task's handle. */
+										
+	xTaskCreate(      barriere,       /* Function that implements the task. */
+                    "BARRIERE",          /* Text name for the task. */
+                    128,      /* Stack size in words, not bytes. */
+                    NULL,    /* Parameter passed into the task. */
+                    tskIDLE_PRIORITY+2,/* Priority at which the task is created. */
+                    NULL );      /* Used to pass out the created task's handle. */
+
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3|TIM_CHANNEL_4);
   /* USER CODE END 2 */
 
   
@@ -398,7 +413,46 @@ static char cpt;
 	}
 }
 
-
+/****************************************************************************/
+/*               	TACHE 	BARRIERE							*/
+/****************************************************************************/
+void barriere( void *pvParameters )
+{
+	int etat_barriere = 0;  //0 levée, 1 en mouvement, 2 baissée
+	int flag_attente = 0;
+	
+	TickType_t xLastWakeTime;
+	// Initialise the xLastWakeTime variable with the current time.
+  xLastWakeTime = xTaskGetTickCount();
+	
+	while(1)
+	{	
+		if (train && etat_barriere == 0 && flag_attente == 1)
+		{
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 32000 );
+			etat_barriere = 1;
+			flag_attente = 0;
+		}
+		else if (!train && etat_barriere == 2)
+		{
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, -32000 );
+			etat_barriere = 1;
+		}
+		else if(etat_barriere == 1)
+		{
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
+			if (train) etat_barriere = 2;
+			else etat_barriere = 0;
+		}
+		
+		if (train && etat_barriere == 0 && flag_attente == 0)
+		{
+			flag_attente = 1;
+			vTaskDelayUntil(&xLastWakeTime, 5000/ portTICK_PERIOD_MS);
+		}
+		else		vTaskDelayUntil(&xLastWakeTime, 2000/ portTICK_PERIOD_MS);
+	}
+}
 /****************************************************************************/
 /*               	FONCTION 	GENERATION TEMPS							*/
 /****************************************************************************/
