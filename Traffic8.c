@@ -228,7 +228,9 @@ int main(void)
                     tskIDLE_PRIORITY+2,/* Priority at which the task is created. */
                     NULL );      /* Used to pass out the created task's handle. */
 
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3|TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3|TIM_CHANNEL_4);  //Active le PWM pour le moteur
+	HAL_TIM_Base_Start( &htim3 );
+	
   /* USER CODE END 2 */
 
   
@@ -429,13 +431,15 @@ void barriere( void *pvParameters )
 	{	
 		if (train && etat_barriere == 0 && flag_attente == 1)
 		{
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 32000 );
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 30000 );
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 0 );
 			etat_barriere = 1;
 			flag_attente = 0;
 		}
 		else if (!train && etat_barriere == 2)
 		{
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, -32000 );
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 30000 );
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
 			etat_barriere = 1;
 		}
 		else if(etat_barriere == 1)
