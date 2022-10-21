@@ -61,6 +61,8 @@
 #include <stdbool.h>
 #include "tim.h"
 #include "stm32f1xx_hal_tim.h"
+#include "LCD.h"
+
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -136,6 +138,7 @@ volatile bool	detect2;
 volatile bool train1 = 0;
 volatile bool train2 = 0;
 volatile bool train = 0;
+volatile bool mess_train_nuit = 0;
 char ph;
 char task;
 bool escape;
@@ -179,7 +182,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+	lcd_init();
+	lcd_clear();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -422,17 +426,22 @@ void barriere( void *pvParameters )
 {
 	int etat_barriere = 0;  //0 levée, 1 en mouvement, 2 baissée
 	int flag_attente = 0;
+	unsigned int TIMCounter, TIMtest;
 	
 	TickType_t xLastWakeTime;
 	// Initialise the xLastWakeTime variable with the current time.
   xLastWakeTime = xTaskGetTickCount();
 	
 	while(1)
-	{	
+	{
+		TIMtest = __HAL_TIM_GET_COUNTER(&htim3);
+		//printf("Compteur %d", TIMtest);
 		if (train && etat_barriere == 0 && flag_attente == 1)
 		{
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 30000 );
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 30000 ); //Clock apb1 36MHZ -> ARR = 35999 -> 1KHz
 			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 0 );
+			TIMCounter = __HAL_TIM_GET_COUNTER(&htim3);
+			//HAL_TIM_Base_Start( &htim3 );
 			etat_barriere = 1;
 			flag_attente = 0;
 		}
@@ -440,21 +449,24 @@ void barriere( void *pvParameters )
 		{
 			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 30000 );
 			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
+			__HAL_TIM_GET_COUNTER(&htim3);
+			//HAL_TIM_Base_Start( &htim3 );
 			etat_barriere = 1;
 		}
 		else if(etat_barriere == 1)
 		{
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
-			if (train) etat_barriere = 2;
-			else etat_barriere = 0;
+			if (TIMtest - TIMCounter >= 600)
+			{		
+				//__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
+				if (train) etat_barriere = 2;
+				else etat_barriere = 0;
+			}
 		}
-		
 		if (train && etat_barriere == 0 && flag_attente == 0)
 		{
 			flag_attente = 1;
 			vTaskDelayUntil(&xLastWakeTime, 5000/ portTICK_PERIOD_MS);
 		}
-		else		vTaskDelayUntil(&xLastWakeTime, 2000/ portTICK_PERIOD_MS);
 	}
 }
 /****************************************************************************/
@@ -463,7 +475,8 @@ void barriere( void *pvParameters )
 bool generation_temps ( void) { 
 /* Fonction générant le temps
 */
-bool valid_seq;
+	bool valid_seq;
+	
 	
 	// Indentation du temps
     					                /* clock is an endless loop           */
@@ -497,13 +510,41 @@ bool valid_seq;
    
   	if (memcmp (&debut, &fin, sizeof ( struct temps)) < 0)  {
     	if (memcmp (&debut, &horloge, sizeof ( struct temps)) < 0  &&
-        	memcmp (&horloge, &fin,   sizeof ( struct temps)) < 0)  valid_seq = 1;
-		else valid_seq = 0;
-  	}                                              
+        	memcmp (&horloge, &fin,   sizeof ( struct temps)) < 0) {
+						valid_seq = 1;
+						if (mess_train_nuit) {
+							lcd_clear();
+							mess_train_nuit = 0;
+						}
+					}	
+			else {
+			valid_seq = 0;
+			lcd_clear();
+			set_cursor(0,0);
+			lcd_print("Train non");
+			set_cursor(0,1);
+			lcd_print("autorisé");
+			mess_train_nuit = 1;
+			}        
+		}		
   	else  { 
     	if (memcmp (&fin,   &horloge, sizeof (debut)) > 0  &&
-        	memcmp (&horloge, &debut, sizeof (debut)) > 0)  valid_seq = 1;
-		else valid_seq = 0;
+        	memcmp (&horloge, &debut, sizeof (debut)) > 0) {
+						valid_seq = 1;
+						if (mess_train_nuit) {
+							lcd_clear();
+							mess_train_nuit = 0;
+						}
+					}
+		else {
+			valid_seq = 0;
+			lcd_clear();
+			set_cursor(0,0);
+			lcd_print("Train non");
+			set_cursor(0,1);
+			lcd_print("autorisé");
+			mess_train_nuit = 1;
+			}
   	}
 
 	return ( valid_seq );
