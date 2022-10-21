@@ -70,11 +70,11 @@
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#define ESC				0x1B							/* Caractère Escape */
-#define M_MAJ			0x4d							/* Caractère M*/
-#define M_MIN			0x6d							/* Caractère m*/
-#define N_MAJ			0x4e							/* Caractère N*/
-#define N_MIN			0x6e							/* Caractère n*/
+#define ESC				0x1B							/* Caract?re Escape */
+#define M_MAJ			0x4d							/* Caract?re M*/
+#define M_MIN			0x6d							/* Caract?re m*/
+#define N_MAJ			0x4e							/* Caract?re N*/
+#define N_MIN			0x6e							/* Caract?re n*/
 #define CTRL_Q     0x11                             // Control+Q character code
 #define CTRL_S     0x13                             // Control+S character code
 #define DEL        0x7F
@@ -139,6 +139,7 @@ volatile bool train1 = 0;
 volatile bool train2 = 0;
 volatile bool train = 0;
 volatile bool mess_train_nuit = 0;
+volatile int cpt_top = 0;
 char ph;
 char task;
 bool escape;
@@ -158,15 +159,15 @@ void controleur( void *pvParameters );
 void command  (void *pvParameters);
 void lecture_BP (void *pvParameters);
 void barriere (void *pvParameters);
-
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
 void sequenceur (bool);
 bool generation_temps ( void) ;
-bool lect_H (char  * )	;
+bool lect_H (char  * );
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
 QueueHandle_t xRxQueue;
-QueueHandle_t xTxQueue; //Permet de communiquer le temps entre la fonction génération temps et la fonction commande, la queue est de taille 1 fois le message de temps complet la donnée temps donc on ne doit pas gérer la queue même si on ne lit pas la donnée
+QueueHandle_t xTxQueue; //Permet de communiquer le temps entre la fonction g?n?ration temps et la fonction commande, la queue est de taille 1 fois le message de temps complet la donn?e temps donc on ne doit pas g?rer la queue m?me si on ne lit pas la donn?e
 /* USER CODE END 0 */
 
 int main(void)
@@ -229,11 +230,13 @@ int main(void)
                     "BARRIERE",          /* Text name for the task. */
                     128,      /* Stack size in words, not bytes. */
                     NULL,    /* Parameter passed into the task. */
-                    tskIDLE_PRIORITY+2,/* Priority at which the task is created. */
+                    tskIDLE_PRIORITY+1,/* Priority at which the task is created. */
                     NULL );      /* Used to pass out the created task's handle. */
 
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3|TIM_CHANNEL_4);  //Active le PWM pour le moteur
 	HAL_TIM_Base_Start( &htim3 );
+	HAL_TIM_Base_Start_IT( &htim3 );
+	
 	
   /* USER CODE END 2 */
 
@@ -404,9 +407,9 @@ static char cpt;
 				HAL_GPIO_WritePin (GPIOB, R1_Pin|R2_Pin|S1_Pin|S2_Pin, 1);
 				HAL_GPIO_WritePin (GPIOB, V1_Pin|O1_Pin|O2_Pin|V2_Pin, 0);
 				if (( ++cpt > 8 ) || (detect2&&!DPV2) || flag_manuel) ph = 4;
-				//Les piétons ont 8 sec pour passer
-				//S'il y a des voitures mais pas de piétons on remet le feu des voitures au vert
-				//Si on est en manuel on passe d'une phase à l'autre manuellement
+				//Les pi?tons ont 8 sec pour passer
+				//S'il y a des voitures mais pas de pi?tons on remet le feu des voitures au vert
+				//Si on est en manuel on passe d'une phase ? l'autre manuellement
 		}
 		break;
 		}
@@ -424,7 +427,7 @@ static char cpt;
 /****************************************************************************/
 void barriere( void *pvParameters )
 {
-	int etat_barriere = 0;  //0 levée, 1 en mouvement, 2 baissée
+	int etat_barriere = 0;  //0 levee, 1 en mouvement, 2 baiss?e
 	int flag_attente = 0;
 	unsigned int TIMCounter, TIMtest;
 	
@@ -473,7 +476,7 @@ void barriere( void *pvParameters )
 /*               	FONCTION 	GENERATION TEMPS							*/
 /****************************************************************************/
 bool generation_temps ( void) { 
-/* Fonction générant le temps
+/* Fonction g?n?rant le temps
 */
 	bool valid_seq;
 	
@@ -518,16 +521,16 @@ bool generation_temps ( void) {
 						}
 					}	
 			else {
-			valid_seq = 0;
-			lcd_clear();
-			set_cursor(0,0);
-			lcd_print("Train non");
-			set_cursor(0,1);
-			lcd_print("autorisé");
-			mess_train_nuit = 1;
+				valid_seq = 0;
+				lcd_clear();
+				set_cursor(0,0);
+				lcd_print("Train non");
+				set_cursor(0,1);
+				lcd_print("autoris?");
+				mess_train_nuit = 1;
 			}        
 		}		
-  	else  { 
+  	else  {
     	if (memcmp (&fin,   &horloge, sizeof (debut)) > 0  &&
         	memcmp (&horloge, &debut, sizeof (debut)) > 0) {
 						valid_seq = 1;
@@ -542,7 +545,7 @@ bool generation_temps ( void) {
 			set_cursor(0,0);
 			lcd_print("Train non");
 			set_cursor(0,1);
-			lcd_print("autorisé");
+			lcd_print("autoris?");
 			mess_train_nuit = 1;
 			}
   	}
@@ -577,7 +580,7 @@ bool lect_H (char  *buffer)  {
 /*       				TACHE	CONTROLEUR									*/
 /****************************************************************************/
 void controleur  (void *pvParameters) {
-	//Permet de lancer le sequencer et la génération du temps
+	//Permet de lancer le sequencer et la g?n?ration du temps
   
 	TickType_t xLastWakeTime;
 	
@@ -600,13 +603,13 @@ void controleur  (void *pvParameters) {
 /****************************************************************************/
 void command  (void *pvParameters) {                  
   
-	char cmde[16];						// en RAM interne pour accés rapide 
-	char	c;						// PQ avoir deux variables qui ont le même non
+	char cmde[16];						// en RAM interne pour acc?s rapide 
+	char	c;						// PQ avoir deux variables qui ont le m?me non
 	char cnt,i = 0;
   struct print_H aff;
 	
 		printf ( menu);
-
+		printf("Coucou");
   	while (1)  {   
 		 
 		if 	( xQueueReceive( xTxQueue, &aff, 100 / portTICK_PERIOD_MS )) {
@@ -615,12 +618,12 @@ void command  (void *pvParameters) {
 		}
 			
 		if ( xQueueReceive( xRxQueue, &c, 100 / portTICK_PERIOD_MS )) {
-		//Si qq chose à été envoyé sur la queue (dans HAL_UART_RxCpltCallback) on rentre dans la fonction (xQueueReceive return pdTrue s'il y a qq chose dans la queue
+		//Si qq chose ? ?t? envoy? sur la queue (dans HAL_UART_RxCpltCallback) on rentre dans la fonction (xQueueReceive return pdTrue s'il y a qq chose dans la queue
 			if ( c == ESC ) {  		
 				printf ( "\n\rCommandes :  ");	
 				cnt= 0;
 				do {
-					// On lit au moins une fois la commande qui sera envoyée sur l'UART
+					// On lit au moins une fois la commande qui sera envoy?e sur l'UART
 					xQueueReceive( xRxQueue, &c, portMAX_DELAY );
 					cmde[cnt++] = c;
 				} while ( c != CR );
@@ -667,13 +670,13 @@ void command  (void *pvParameters) {
 
 			if( c == M_MAJ  || c == M_MIN)
 			{
-				/*On arrête l'incrémentation automatique des états dans le controlleur, on fait cela à l'aide d'un flag.
-				Si notre flag est activé, on rentre en mode manuel, et on ne rentre plus 
+				/*On arr?te l'incr?mentation automatique des ?tats dans le controlleur, on fait cela ? l'aide d'un flag.
+				Si notre flag est activ?, on rentre en mode manuel, et on ne rentre plus 
 				*/
 				printf(mode_manuel);
 				flag_manuel = true;
 				do {
-					// On lit au moins une fois la commande qui sera envoyée sur l'UART
+					// On lit au moins une fois la commande qui sera envoy?e sur l'UART
 					xQueueReceive( xRxQueue, &c, portMAX_DELAY );
 					if (c == N_MAJ || c == N_MIN)
 					{
@@ -687,6 +690,8 @@ void command  (void *pvParameters) {
 		}
 	}
 }
+
+
 /* USER CODE END 4 */
 
  /**
@@ -710,17 +715,23 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   
-  if ( GPIO_Pin == Voit1_Pin ) detect1 = 1;		   // Capteur présence véhicule sur voie 1 ON
-	if ( GPIO_Pin == Voit2_Pin ) detect2 = 1;							// Capteur présence véhicule sur voie 2 ON
+  if ( GPIO_Pin == Voit1_Pin ) detect1 = 1;		   // Capteur pr?sence v?hicule sur voie 1 ON
+	if ( GPIO_Pin == Voit2_Pin ) detect2 = 1;							// Capteur pr?sence v?hicule sur voie 2 ON
   
 }
 
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+	cpt_top ++;
+	printf("%d",cpt_top);
+	HAL_TIM_Base_Start_IT( &htim3 );
+}
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	/*On utilise pas de tache permettant de gérer l'interruption et on envoie directement sur la queue le buffeur de notre UART
-	Puis on réarme l'UART.
-	On utilise pas de Handler Task parce qu'on ne met qu'une variable à jour, hors ici il y a très peu à faire
+	/*On utilise pas de tache permettant de g?rer l'interruption et on envoie directement sur la queue le buffeur de notre UART
+	Puis on r?arme l'UART.
+	On utilise pas de Handler Task parce qu'on ne met qu'une variable ? jour, hors ici il y a tr?s peu ? faire
 	*/
 	BaseType_t xHigherPriorityTaskWoken;
 
