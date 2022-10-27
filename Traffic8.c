@@ -139,7 +139,7 @@ volatile bool train1 = 0;
 volatile bool train2 = 0;
 volatile bool train = 0;
 volatile bool mess_train_nuit = 0;
-volatile int cpt_top = 0;
+volatile int cpt_top;
 char ph;
 char task;
 bool escape;
@@ -203,7 +203,8 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
 	MX_TIM2_Init();
-	MX_TIM3_Init();
+	
+	cpt_top = 0;
 	
   xTaskCreate(      controleur,       /* Function that implements the task. */
                     "CONTROLEUR",          /* Text name for the task. */
@@ -234,8 +235,6 @@ int main(void)
                     NULL );      /* Used to pass out the created task's handle. */
 
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3|TIM_CHANNEL_4);  //Active le PWM pour le moteur
-	HAL_TIM_Base_Start( &htim3 );
-	HAL_TIM_Base_Start_IT( &htim3 );
 	
 	
   /* USER CODE END 2 */
@@ -437,30 +436,27 @@ void barriere( void *pvParameters )
 	
 	while(1)
 	{
-		TIMtest = __HAL_TIM_GET_COUNTER(&htim3);
 		//printf("Compteur %d", TIMtest);
 		if (train && etat_barriere == 0 && flag_attente == 1)
 		{
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 30000 ); //Clock apb1 36MHZ -> ARR = 35999 -> 1KHz
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 0 );
-			TIMCounter = __HAL_TIM_GET_COUNTER(&htim3);
-			//HAL_TIM_Base_Start( &htim3 );
+			cpt_top = 0;
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 15000 ); //Clock apb1 36MHZ -> ARR = 35999 -> 1KHz
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
 			etat_barriere = 1;
 			flag_attente = 0;
 		}
 		else if (!train && etat_barriere == 2)
 		{
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 30000 );
+			cpt_top = 0;
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 15000 );
 			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
-			__HAL_TIM_GET_COUNTER(&htim3);
-			//HAL_TIM_Base_Start( &htim3 );
 			etat_barriere = 1;
 		}
 		else if(etat_barriere == 1)
 		{
-			if (TIMtest - TIMCounter >= 600)
+			if (cpt_top >= 600)
 			{		
-				//__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
+				__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
 				if (train) etat_barriere = 2;
 				else etat_barriere = 0;
 			}
@@ -526,7 +522,7 @@ bool generation_temps ( void) {
 				set_cursor(0,0);
 				lcd_print("Train non");
 				set_cursor(0,1);
-				lcd_print("autoris?");
+				lcd_print("autorise");
 				mess_train_nuit = 1;
 			}        
 		}		
@@ -609,7 +605,6 @@ void command  (void *pvParameters) {
   struct print_H aff;
 	
 		printf ( menu);
-		printf("Coucou");
   	while (1)  {   
 		 
 		if 	( xQueueReceive( xTxQueue, &aff, 100 / portTICK_PERIOD_MS )) {
@@ -716,15 +711,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   
   if ( GPIO_Pin == Voit1_Pin ) detect1 = 1;		   // Capteur pr?sence v?hicule sur voie 1 ON
-	if ( GPIO_Pin == Voit2_Pin ) detect2 = 1;							// Capteur pr?sence v?hicule sur voie 2 ON
+	if ( GPIO_Pin == Voit2_Pin ) 
+		detect2 = 1;							// Capteur pr?sence v?hicule sur voie 2 ON
+	if ( GPIO_Pin == top_codeur_Pin ) 
+		cpt_top++; 
   
-}
-
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-{
-	cpt_top ++;
-	printf("%d",cpt_top);
-	HAL_TIM_Base_Start_IT( &htim3 );
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
