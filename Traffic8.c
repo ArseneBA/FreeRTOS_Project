@@ -140,6 +140,7 @@ volatile bool train2 = 0;
 volatile bool train = 0;
 volatile bool mess_train_nuit = 0;
 volatile int cpt_top;
+volatile int mvmt_moteur = 0;
 char ph;
 char task;
 bool escape;
@@ -159,6 +160,7 @@ void controleur( void *pvParameters );
 void command  (void *pvParameters);
 void lecture_BP (void *pvParameters);
 void barriere (void *pvParameters);
+void asservissement (void *pvParameters);
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim);
 void sequenceur (bool);
 bool generation_temps ( void) ;
@@ -233,6 +235,13 @@ int main(void)
                     NULL,    /* Parameter passed into the task. */
                     tskIDLE_PRIORITY+1,/* Priority at which the task is created. */
                     NULL );      /* Used to pass out the created task's handle. */
+										
+	xTaskCreate(      asservissement,       /* Function that implements the task. */
+                    "ASSERVISSEMENT",          /* Text name for the task. */
+                    128,      /* Stack size in words, not bytes. */
+                    NULL,    /* Parameter passed into the task. */
+                    tskIDLE_PRIORITY+1,/* Priority at which the task is created. */
+                    NULL );      /* Used to pass out the created task's handle. */									
 
 	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3|TIM_CHANNEL_4);  //Active le PWM pour le moteur
 	
@@ -422,6 +431,40 @@ static char cpt;
 }
 
 /****************************************************************************/
+/*               	TACHE 	ASSERVISSEMENT							*/
+/****************************************************************************/
+
+void asservissement( void *pvParameters )
+{
+	TickType_t xLastWakeTime = xTaskGetTickCount();
+	
+	int last_nb_top = 0;
+	int speed = 6000;
+	int epsilon;
+	int consigne = 10;
+	
+	while(1)
+	{
+		if (mvmt_moteur == 1 || mvmt_moteur == 2)
+		{
+			epsilon = consigne - (cpt_top - last_nb_top);
+
+			speed += epsilon * 100;
+			
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, speed ); //Clock apb1 36MHZ -> ARR = 35999 -> 1KHz
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
+			last_nb_top = cpt_top;
+		}
+		else if (mvmt_moteur == 0)
+		{
+			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
+		}
+		vTaskDelayUntil(&xLastWakeTime, 100/ portTICK_PERIOD_MS);
+	}
+}
+
+
+/****************************************************************************/
 /*               	TACHE 	BARRIERE							*/
 /****************************************************************************/
 void barriere( void *pvParameters )
@@ -440,25 +483,23 @@ void barriere( void *pvParameters )
 		if (train && etat_barriere == 0 && flag_attente == 1)
 		{
 			cpt_top = 0;
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 15000 ); //Clock apb1 36MHZ -> ARR = 35999 -> 1KHz
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
 			etat_barriere = 1;
 			flag_attente = 0;
+			mvmt_moteur = 1;
 		}
 		else if (!train && etat_barriere == 2)
 		{
 			cpt_top = 0;
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_4, 15000 );
-			__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3, 0 );
 			etat_barriere = 1;
+			mvmt_moteur = 2;
 		}
 		else if(etat_barriere == 1)
 		{
 			if (cpt_top >= 600)
-			{		
-				__HAL_TIM_SET_COMPARE( &htim2, TIM_CHANNEL_3 | TIM_CHANNEL_4, 0 );
+			{
 				if (train) etat_barriere = 2;
 				else etat_barriere = 0;
+				mvmt_moteur = 0;
 			}
 		}
 		if (train && etat_barriere == 0 && flag_attente == 0)
@@ -466,8 +507,10 @@ void barriere( void *pvParameters )
 			flag_attente = 1;
 			vTaskDelayUntil(&xLastWakeTime, 5000/ portTICK_PERIOD_MS);
 		}
+		vTaskDelayUntil(&xLastWakeTime, 100/ portTICK_PERIOD_MS );
 	}
 }
+
 /****************************************************************************/
 /*               	FONCTION 	GENERATION TEMPS							*/
 /****************************************************************************/
