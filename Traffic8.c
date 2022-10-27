@@ -95,7 +95,7 @@ const char menu[] =
    "| Debut    | D hh:mm:ss  | mise a jour debut controle feux     |\n"
    "| Fin      | F hh:mm:ss  | mise a jour fin controle feux       |\n"
 	 "|          |             |                                     |\n"
-	 "| M	       |             | test des feux en mode manuel        |\n"
+	 "| M        |             | test des feux en mode manuel        |\n"
    "+----------+-------------+-------------------------------------+\n";
 const char mode_manuel[] = 
 	   
@@ -141,6 +141,8 @@ volatile bool train = 0;
 volatile bool mess_train_nuit = 0;
 volatile int cpt_top;
 volatile int mvmt_moteur = 0;
+volatile int cpt_blocage_barriere = 0;
+volatile bool barriere_bloquee = false;
 char ph;
 char task;
 bool escape;
@@ -356,7 +358,7 @@ static char cpt;
 		{
 				 HAL_GPIO_WritePin(GPIOB,V1_Pin|S2_Pin|R2_Pin, 1);
 				 HAL_GPIO_WritePin(GPIOB,R1_Pin|O1_Pin|V2_Pin|O2_Pin|S1_Pin, 0);
-				if (( ++cpt > 8 ) || DPV1 || ( detect2&&!detect1&&!DPV2 ) || flag_manuel || train) ph = 3;
+				if (( ++cpt > 8 ) || DPV1 || ( detect2&&!detect1&&!DPV2 ) || flag_manuel || train || barriere_bloquee) ph = 3;
 				//S'il y a un train, on va au feu rouge pour les voitures passant par le train
 				//Si l'on est en mode manuelle, on ne fait plus attention au timer et on change de phase seulement quand on appuie sur n
 		}
@@ -377,7 +379,7 @@ static char cpt;
 				cpt = 0;
 				ph = 5;	
 				DPV1 = DPV2 = detect1 = detect2 = 0;
-			  if (train) HAL_GPIO_WritePin (GPIOB, S1_Pin, 1);
+			  if (train || barriere_bloquee) HAL_GPIO_WritePin (GPIOB, S1_Pin, 1);
 		}
 		break;
 
@@ -385,7 +387,7 @@ static char cpt;
 		{
 				HAL_GPIO_WritePin (GPIOB, R1_Pin|V2_Pin|S1_Pin, 1);
 				HAL_GPIO_WritePin(GPIOB, V1_Pin|O1_Pin|S2_Pin|R2_Pin|O2_Pin, 0);
-				if (!train)
+				if (!train && !barriere_bloquee)
 				{	
 					if (( ++cpt > 8 ) || DPV2 || ( detect1&&!detect2&&!DPV1 ) || flag_manuel) ph = 6;
 					//Si l'on est en mode manuelle, on ne fait plus attention au timer et on change de phase seulement quand on appuie sur n
@@ -401,7 +403,7 @@ static char cpt;
 		{
 				HAL_GPIO_WritePin (GPIOB, R1_Pin|O2_Pin, 1);
 				HAL_GPIO_WritePin (GPIOB, V1_Pin|O1_Pin|S1_Pin|R2_Pin|V2_Pin|S2_Pin, 0);
-				if (train)
+				if (train || barriere_bloquee)
 				{					
 					ph = 7;
 					HAL_GPIO_WritePin (GPIOB, S1_Pin, 1);
@@ -483,6 +485,7 @@ void barriere( void *pvParameters )
 		if (train && etat_barriere == 0 && flag_attente == 1)
 		{
 			cpt_top = 0;
+			cpt_blocage_barriere = 0;
 			etat_barriere = 1;
 			flag_attente = 0;
 			mvmt_moteur = 1;
@@ -490,6 +493,7 @@ void barriere( void *pvParameters )
 		else if (!train && etat_barriere == 2)
 		{
 			cpt_top = 0;
+			cpt_blocage_barriere = 0;
 			etat_barriere = 1;
 			mvmt_moteur = 2;
 		}
@@ -499,6 +503,33 @@ void barriere( void *pvParameters )
 			{
 				if (train) etat_barriere = 2;
 				else etat_barriere = 0;
+				mvmt_moteur = 0;
+				
+				lcd_clear();
+				set_cursor(0,0);
+				lcd_print("Autorisation");
+				set_cursor(0,1);
+				lcd_print("passage");
+			}
+			else if (cpt_blocage_barriere >= 8)
+			{
+				if ( mvmt_moteur == 1)
+				{			
+					lcd_clear();
+					set_cursor(0,0);
+					lcd_print("Pb barriere");
+					set_cursor(0,1);
+					lcd_print("ne pas passer");
+					
+					printf("Barriere bloquee : descente");
+					
+					barriere_bloquee = true;
+				}
+				else if ( mvmt_moteur == 2)
+				{					
+					printf("Barriere bloquee ; montee");
+					barriere_bloquee = true;
+				}
 				mvmt_moteur = 0;
 			}
 		}
@@ -531,7 +562,7 @@ bool generation_temps ( void) {
         }
       }
     }
-  
+ 
 	aff_H.chaine = chaine1;
   aff_H.heure = horloge.heure;
 	aff_H.min = horloge.min;
@@ -589,7 +620,12 @@ bool generation_temps ( void) {
 			}
   	}
 
-	return ( valid_seq );
+		if (mvmt_moteur == 1 || mvmt_moteur == 2)
+		{
+			cpt_blocage_barriere ++;
+		}
+
+		return ( valid_seq );
 } 
 
            
